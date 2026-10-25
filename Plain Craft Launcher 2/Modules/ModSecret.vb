@@ -1,5 +1,7 @@
 '由于包含加解密等安全信息，本文件中的部分代码已被删除
 
+Imports Microsoft.VisualBasic.CompilerServices
+
 Friend Module ModSecret
 
     '标注 PCL 的不同分支，仅用于替换标记
@@ -7,34 +9,57 @@ Friend Module ModSecret
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
     Public Const RegFolder As String = "PCLDebug"
     '用于微软登录的 ClientId
-    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")
+    Public OAuthClientId As String = GetSecret("PCL_MS_CLIENT_ID", "MsClientId")
     'CurseForge API Key
-    Public CurseForgeAPIKey As String = If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")
+    Public CurseForgeAPIKey As String = GetSecret("PCL_CURSEFORGE_API_KEY", "CurseForgeApiKey")
     '用于匿名数据收集的腾讯云日志服务上报 URL，形如 https://{region}.cls.tencentcs.com/track?topic_id={topic_id}
     Public Const ClsBaseUrl As String = ""
 
 #Region "网络鉴权"
 
-    Public Const RestrictMcDownload As Boolean = True
+    Public Const RestrictMcDownload As Boolean = False
     Friend Function SecretCdnSign(UrlWithMark As String) As String
+        ' 如果启动时间少于 1，或者不需要 CDN 签名，直接返回
+        If ModBase.ApplicationStartTick < 1L Then Return UrlWithMark
         If Not UrlWithMark.EndsWithF("{CDN}") Then Return UrlWithMark
-        Return UrlWithMark.Replace("{CDN}", "").Replace(" ", "%20")
+
+        Dim text2 = UrlWithMark.Replace("{CDN}", "").Replace(" ", "%20")
+        Dim text3 = ModBase.RandomInteger(0, 2147483645).ToString("x").EnsureLength("0"c, 8)
+        Dim text4 = Conversions.ToString(ModBase.GetUnixTimestampUtc())
+
+        Dim text5 = text2.Substring(text2.IndexOfF("://") + 3)
+        text5 = text5.Substring(text5.IndexOfF("/"))
+
+        ' 这里调用了加密工具类，请确保你的项目引用了 CryptographyUtils
+        Dim text6 = CryptographyUtils.ComputeHash({text5, text4, text3, "0", "PCL2Server"}.Join("-"), 0)
+
+        Dim signStr = $"{text4}-{text3}-0-{text6}"
+        Dim separator = If(text2.Contains("?"), "&", "?")
+        Return $"{text2}{separator}sign={signStr}"
     End Function
     ''' <summary>
     ''' 设置 Headers 的 UA、Referer。
     ''' </summary>
     Friend Sub SecretHeadersSign(Url As String, ByRef Req As HttpRequestMessage, Optional SimulateBrowserHeaders As Boolean = False)
-        If Not Req.Headers.UserAgent.Any Then
+        If ModBase.ApplicationStartTick < 1L Then Return
+
+        If Not Req.Headers.UserAgent.Any() Then
             If Url.Contains("baidupcs.com") OrElse Url.Contains("baidu.com") Then
-                Req.Headers.Add("User-Agent", "LogStatistic")  '#4951
+                Req.Headers.Add("User-Agent", "LogStatistic")
             ElseIf SimulateBrowserHeaders Then
                 Req.Headers.Add("User-Agent", $"PCL2/{VersionBaseName}.{CInt(BuildType)} Mozilla/5.0 AppleWebKit/537.36 Chrome/63.0.3239.132 Safari/537.36")
             Else
                 Req.Headers.Add("User-Agent", $"PCL2/{VersionBaseName}.{CInt(BuildType)}")
             End If
         End If
-        If Not SimulateBrowserHeaders Then Req.Headers.Add("Referer", $"http://{VersionCode}.open.pcl2.server/")
-        If Url.Contains("api.curseforge.com") OrElse Url.Contains("forgecdn.net") Then Req.Headers.Add("x-api-key", CurseForgeAPIKey)
+
+        If Not SimulateBrowserHeaders Then
+            Req.Headers.Referrer = New Uri($"http://{VersionCode}.pcl2.server/")
+        End If
+
+        If Url.Contains("api.curseforge.com") OrElse Url.Contains("forgecdn.net") Then
+            Req.Headers.Add("x-api-key", CurseForgeAPIKey)
+        End If
     End Sub
 
 #End Region
@@ -196,6 +221,37 @@ Friend Module ModSecret
     ''' </summary>
     Friend Function GetIdentify() As String
         Return "0000-0000-0000-0000"
+    End Function
+
+#End Region
+
+#Region "本地敏感配置"
+
+    ''' <summary>
+    ''' 读取敏感配置（CurseForge API Key、微软登录 Client ID）。
+    ''' 优先读环境变量，其次读 exe 同目录下的 Secrets.cfg。
+    ''' Secrets.cfg 每行一个 Key=Value，# 开头为注释，例如：
+    '''     MsClientId=00000000-0000-0000-0000-000000000000
+    '''     CurseForgeApiKey=...
+    ''' 这样发布出去的 exe 里不会包含任何凭据。
+    ''' </summary>
+    Private Function GetSecret(EnvironmentName As String, ConfigKey As String) As String
+        Dim FromEnvironment = Environment.GetEnvironmentVariable(EnvironmentName)
+        If Not String.IsNullOrEmpty(FromEnvironment) Then Return FromEnvironment
+        Try
+            Dim ConfigPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "Secrets.cfg")
+            If Not System.IO.File.Exists(ConfigPath) Then Return ""
+            For Each Line As String In System.IO.File.ReadAllLines(ConfigPath)
+                Dim Text = Line.Trim()
+                If Text.Length = 0 OrElse Text.StartsWith("#"c) Then Continue For
+                Dim SplitIndex = Text.IndexOf("="c)
+                If SplitIndex <= 0 Then Continue For
+                If Text.Substring(0, SplitIndex).Trim() = ConfigKey Then Return Text.Substring(SplitIndex + 1).Trim()
+            Next
+        Catch ex As Exception
+            Return ""
+        End Try
+        Return ""
     End Function
 
 #End Region

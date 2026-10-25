@@ -342,3 +342,12 @@ ASALocalRun/
 healthchecksdb
 
 MaskFiles/
+
+# Security Files
+Plain Craft Launcher 2/Modules/ModSecret.vb
+
+# Local secrets
+Secrets.cfg
+
+# 本机构建脚本（含本机路径，不纳入版本库）
+build.ps1
