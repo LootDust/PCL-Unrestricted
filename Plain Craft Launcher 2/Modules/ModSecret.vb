@@ -9,9 +9,9 @@ Friend Module ModSecret
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
     Public Const RegFolder As String = "PCLDebug"
     '用于微软登录的 ClientId
-    Public OAuthClientId As String = GetSecret("PCL_MS_CLIENT_ID", "MsClientId")
+    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")
     'CurseForge API Key
-    Public CurseForgeAPIKey As String = GetSecret("PCL_CURSEFORGE_API_KEY", "CurseForgeApiKey")
+    Public CurseForgeAPIKey As String = If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")
     '用于匿名数据收集的腾讯云日志服务上报 URL，形如 https://{region}.cls.tencentcs.com/track?topic_id={topic_id}
     Public Const ClsBaseUrl As String = ""
 
@@ -221,37 +221,6 @@ Friend Module ModSecret
     ''' </summary>
     Friend Function GetIdentify() As String
         Return "0000-0000-0000-0000"
-    End Function
-
-#End Region
-
-#Region "本地敏感配置"
-
-    ''' <summary>
-    ''' 读取敏感配置（CurseForge API Key、微软登录 Client ID）。
-    ''' 优先读环境变量，其次读 exe 同目录下的 Secrets.cfg。
-    ''' Secrets.cfg 每行一个 Key=Value，# 开头为注释，例如：
-    '''     MsClientId=00000000-0000-0000-0000-000000000000
-    '''     CurseForgeApiKey=...
-    ''' 这样发布出去的 exe 里不会包含任何凭据。
-    ''' </summary>
-    Private Function GetSecret(EnvironmentName As String, ConfigKey As String) As String
-        Dim FromEnvironment = Environment.GetEnvironmentVariable(EnvironmentName)
-        If Not String.IsNullOrEmpty(FromEnvironment) Then Return FromEnvironment
-        Try
-            Dim ConfigPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "Secrets.cfg")
-            If Not System.IO.File.Exists(ConfigPath) Then Return ""
-            For Each Line As String In System.IO.File.ReadAllLines(ConfigPath)
-                Dim Text = Line.Trim()
-                If Text.Length = 0 OrElse Text.StartsWith("#"c) Then Continue For
-                Dim SplitIndex = Text.IndexOf("="c)
-                If SplitIndex <= 0 Then Continue For
-                If Text.Substring(0, SplitIndex).Trim() = ConfigKey Then Return Text.Substring(SplitIndex + 1).Trim()
-            Next
-        Catch ex As Exception
-            Return ""
-        End Try
-        Return ""
     End Function
 
 #End Region

@@ -351,3 +351,4 @@ Secrets.cfg
 
 # 本机构建脚本（含本机路径，不纳入版本库）
 build.ps1
+release.ps1
